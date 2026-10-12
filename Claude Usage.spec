@@ -49,10 +49,10 @@ app = BUNDLE(
     name='Claude Usage.app',
     icon='build_assets/ClaudeUsage.icns',
     bundle_identifier='local.claude-usage-bar',
-    version='1.0',
+    version='1.0.2',
     info_plist={
         'LSUIElement': True,
         'NSHumanReadableCopyright': '© 2026 Afif Tabish',
-        'CFBundleGetInfoString': 'Claude Usage 1.0 by Afif Tabish',
+        'CFBundleGetInfoString': 'Claude Usage 1.0.2 by Afif Tabish',
     },
 )

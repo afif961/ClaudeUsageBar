@@ -18,6 +18,7 @@ import json
 import math
 import os
 import plistlib
+import ssl
 import subprocess
 import sys
 import threading
@@ -39,7 +40,7 @@ from PyObjCTools import AppHelper
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 SETTINGS_PAGE = "https://claude.ai/settings/usage"
 REFRESH_SECONDS = 60
-APP_VERSION = "1.0"
+APP_VERSION = "1.0.2"
 AUTHOR = "Afif Tabish"
 MOCK = os.environ.get("CLAUDE_USAGE_MOCK") == "1"
 FROZEN = getattr(sys, "frozen", False)          # True in the shareable, self-contained app
@@ -58,6 +59,19 @@ LIMITS = [
 
 
 # ── Data ─────────────────────────────────────────────────────────────────────
+
+def _ssl_context():
+    """Verify against macOS's own CA bundle. A bundled (PyInstaller) Python's
+    OpenSSL otherwise looks for certificates at the path of the machine that
+    built it, which doesn't exist on other Macs, so every request fails."""
+    system_bundle = "/etc/ssl/cert.pem"
+    if os.path.exists(system_bundle):
+        return ssl.create_default_context(cafile=system_bundle)
+    return ssl.create_default_context()
+
+
+SSL_CONTEXT = _ssl_context()
+
 
 class LoginError(Exception):
     pass
@@ -98,10 +112,10 @@ def fetch_usage():
         "Authorization": "Bearer " + _access_token(),
         "anthropic-beta": "oauth-2025-04-20",
         "Content-Type": "application/json",
-        "User-Agent": "claude-usage-bar/1.0",
+        "User-Agent": "claude-usage-bar/1.0.2",
     })
     try:
-        with urllib.request.urlopen(req, timeout=15) as r:
+        with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as r:
             return json.loads(r.read().decode())
     except urllib.error.HTTPError as e:
         if e.code in (401, 403):
