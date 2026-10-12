@@ -269,19 +269,25 @@ class UsageBar(NSObject):
     # actions
     def refresh_(self, _):
         def work():
+            detail = None
             try:
                 data, err = fetch_usage(), None
             except LoginError as e:
                 data, err = None, str(e)
             except RateLimited:
                 data, err = None, "Checking too often — showing last values, will retry"
-            except Exception:
+            except Exception as e:
                 data, err = None, "Can't reach Claude — showing last known values"
-            AppHelper.callAfter(self._done, data, err)
+                detail = f"{type(e).__name__}: {e}"
+            AppHelper.callAfter(self._done, data, err, detail)
         threading.Thread(target=work, daemon=True).start()
 
     @objc.python_method
-    def _done(self, data, err):
+    def _done(self, data, err, detail=None):
+        # log only when the state changes, so a lasting failure isn't written every minute
+        if err != self.error or (data and self.updated is None):
+            _log("Usage check failed: " + err + (f" ({detail})" if detail else "") if err
+                 else "Usage loaded")
         if data:
             self.data, self.updated = data, datetime.now()
         self.error = err
