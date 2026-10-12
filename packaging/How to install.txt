@@ -1,0 +1,15 @@
+Claude Usage — shows your Claude plan usage % and reset countdown in the Mac menu bar.
+
+You need: Claude Code installed and logged in on this Mac, and macOS 11 or newer.
+
+1. Drag "Claude Usage" into your Applications folder.
+2. Open it the first time like this (it is not from the App Store):
+   - Right-click the app → Open → click Open.
+   - If macOS only offers "Move to Trash" or "Done": open System Settings → Privacy & Security,
+     scroll down and click "Open Anyway" next to Claude Usage, then open it again.
+3. If macOS asks to use "Claude Code-credentials", click "Always Allow".
+   (It reads your own Claude Code login and only sends it to Anthropic to get your usage.)
+4. Click the icon in the menu bar → turn on "Start at login" to have it start automatically.
+
+Tip: hold ⌘ and drag the icon to move it next to the battery.
+If it shows "—", click it to see why. Opening Claude Code once fixes an expired login.

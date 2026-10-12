@@ -1,0 +1,10 @@
+.venv/
+build/
+dist/
+share/
+__pycache__/
+*.pyc
+*.dmg
+*.zip
+.DS_Store
+build_assets/pyinstaller.log
