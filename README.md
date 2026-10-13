@@ -6,7 +6,7 @@ right next to the battery icon. Same numbers as `/usage` in Claude Code.
 - Current 5-hour session % and a countdown to its reset, in the menu bar
 - Weekly limits (all models, Opus, Sonnet) and their reset times in the menu
 - Turns orange at 75% and red at 90%
-- Refreshes every minute; optional start at login
+- Refreshes every 5 minutes (backs off if Claude says it's checking too often); optional start at login
 
 Made by **Afif Tabish**.
 

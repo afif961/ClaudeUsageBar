@@ -39,8 +39,9 @@ from PyObjCTools import AppHelper
 
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 SETTINGS_PAGE = "https://claude.ai/settings/usage"
-REFRESH_SECONDS = 60
-APP_VERSION = "1.0.2"
+REFRESH_SECONDS = 300          # the usage endpoint rate-limits per-minute polling
+MAX_BACKOFF_SECONDS = 1800     # longest wait after repeated "too many requests"
+APP_VERSION = "1.0.3"
 AUTHOR = "Afif Tabish"
 MOCK = os.environ.get("CLAUDE_USAGE_MOCK") == "1"
 FROZEN = getattr(sys, "frozen", False)          # True in the shareable, self-contained app
@@ -78,7 +79,9 @@ class LoginError(Exception):
 
 
 class RateLimited(Exception):
-    pass
+    def __init__(self, retry_after=None):
+        super().__init__()
+        self.retry_after = retry_after   # seconds, when the server says
 
 
 def _access_token():
@@ -112,7 +115,7 @@ def fetch_usage():
         "Authorization": "Bearer " + _access_token(),
         "anthropic-beta": "oauth-2025-04-20",
         "Content-Type": "application/json",
-        "User-Agent": "claude-usage-bar/1.0.2",
+        "User-Agent": "claude-usage-bar/1.0.3",
     })
     try:
         with urllib.request.urlopen(req, timeout=15, context=SSL_CONTEXT) as r:
@@ -121,7 +124,11 @@ def fetch_usage():
         if e.code in (401, 403):
             raise LoginError("Login expired — open Claude Code to renew it")
         if e.code == 429:
-            raise RateLimited()
+            try:
+                retry_after = int(e.headers.get("Retry-After", ""))
+            except ValueError:   # missing, or an HTTP date rather than seconds
+                retry_after = None
+            raise RateLimited(retry_after)
         raise
 
 
@@ -189,6 +196,7 @@ class UsageBar(NSObject):
         self = objc.super(UsageBar, self).init()
         self.defaults = NSUserDefaults.standardUserDefaults()
         self.data, self.error, self.updated = None, None, None
+        self.backoff, self.timer, self.busy = 0, None, False
         self.item = NSStatusBar.systemStatusBar().statusItemWithLength_(NSVariableStatusItemLength)
         btn = self.item.button()
         btn.setImage_(_burst_icon())
@@ -199,9 +207,7 @@ class UsageBar(NSObject):
         self.menu.setAutoenablesItems_(False)
         self.item.setMenu_(self.menu)
         self._build_menu()
-        self.refresh_(None)
-        NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
-            REFRESH_SECONDS, self, "refresh:", None, True)
+        self.refresh_(None)   # each check schedules the next one when it finishes
         # tick the reset countdown every 30 s without calling the API
         NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
             30, self, "tick:", None, True)
@@ -282,23 +288,41 @@ class UsageBar(NSObject):
 
     # actions
     def refresh_(self, _):
+        if self.busy:   # "Refresh now" while a check is already running
+            return
+        self.busy = True
+        if self.timer:
+            self.timer.invalidate()
+            self.timer = None
+
         def work():
-            detail = None
+            detail, limited, retry_after = None, False, None
             try:
                 data, err = fetch_usage(), None
             except LoginError as e:
                 data, err = None, str(e)
-            except RateLimited:
+            except RateLimited as e:
                 data, err = None, "Checking too often — showing last values, will retry"
+                limited, retry_after = True, e.retry_after
             except Exception as e:
                 data, err = None, "Can't reach Claude — showing last known values"
                 detail = f"{type(e).__name__}: {e}"
-            AppHelper.callAfter(self._done, data, err, detail)
+            AppHelper.callAfter(self._done, data, err, detail, limited, retry_after)
         threading.Thread(target=work, daemon=True).start()
 
     @objc.python_method
-    def _done(self, data, err, detail=None):
-        # log only when the state changes, so a lasting failure isn't written every minute
+    def _done(self, data, err, detail=None, limited=False, retry_after=None):
+        self.busy = False
+        # back off on "too many requests" (5, 10, 20, then 30 min) so retries don't keep it limited
+        if limited:
+            self.backoff = min(MAX_BACKOFF_SECONDS, max(REFRESH_SECONDS, self.backoff * 2))
+            delay = max(retry_after or 0, self.backoff)
+            detail = f"next check in {delay // 60} min"
+        else:
+            self.backoff, delay = 0, REFRESH_SECONDS
+        self.timer = NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(
+            delay, self, "refresh:", None, False)
+        # log only when the state changes, so a lasting failure isn't written on every check
         if err != self.error or (data and self.updated is None):
             _log("Usage check failed: " + err + (f" ({detail})" if detail else "") if err
                  else "Usage loaded")
